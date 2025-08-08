@@ -309,9 +309,6 @@ for profile, data in results.items():
 
 ### Thermal Performance Ranking
 
-<img width="1020" height="682" alt="image" src="https://github.com/user-attachments/assets/fb2fad7a-8ea5-4979-955a-3d1987da54fb" />
-
-
 | Rank | Profile | Max Temperature | Final Temperature | Thermal Efficiency |
 |------|---------|----------------|-------------------|-------------------|
 | 1 | Elliptical | 259.3°C | 227.7°C | Best |
@@ -323,7 +320,7 @@ for profile, data in results.items():
 
 ### Heat Distribution Patterns
 
-**[INSERT DIAGRAM: Temperature contour plots for each profile at t=60s]**
+<img width="1020" height="682" alt="image" src="https://github.com/user-attachments/assets/fb2fad7a-8ea5-4979-955a-3d1987da54fb" />
 
 #### Key Observations
 1. **Stagnation Point Heating**: Maximum at nose tip (0,0,0)
