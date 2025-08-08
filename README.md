@@ -110,7 +110,6 @@ where:
   h_conv = 10 × Re^0.5 × ρ^0.5
 ```
 
-**[INSERT DIAGRAM: Stagnation point heating illustration showing airflow, shock wave, and temperature distribution]**
 
 #### 2. Heat Conduction (Fourier's Law)
 ```
