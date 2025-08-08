@@ -1,6 +1,14 @@
 # Differential Physics Engine Demo using Pytorch: Thermal FEA on Rocket Nose during Launch
 
+
+
+
+
+<img width="719" height="540" alt="rocket_mesh_comparison" src="https://github.com/user-attachments/assets/1ee9fe95-53c4-4ded-bce5-face9428efd6" />
+
+
 ---
+
 
 <img width="1160" height="929" alt="image" src="https://github.com/user-attachments/assets/852199d6-1b0b-43d2-af7b-b46a8ddf77d0" />
 
