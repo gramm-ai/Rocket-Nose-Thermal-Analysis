@@ -1,5 +1,12 @@
 # Rocket Nose Cone Thermal Analysis System
 
+---
+
+<img width="980" height="691" alt="image" src="https://github.com/user-attachments/assets/e5071305-07b5-4bcd-ac04-f7e7e434ddd1" />
+
+---
+
+
 ## GPU-Accelerated Finite Element Analysis for Aerospace Thermal Protection
 
 ![Project Status](https://img.shields.io/badge/Status-Production-green)
@@ -128,9 +135,6 @@ where:
 - **Reduced Locking**: Superior performance for thin-wall structures
 - **Orthogonal Heat Flow**: Better accuracy for thermal gradients
 - **Computational Efficiency**: 8 nodes vs 10 for tetrahedra
-
-
-<img width="980" height="691" alt="image" src="https://github.com/user-attachments/assets/e5071305-07b5-4bcd-ac04-f7e7e434ddd1" />
 
 
 #### Shape Functions (Trilinear)
