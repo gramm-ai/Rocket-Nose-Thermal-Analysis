@@ -39,7 +39,7 @@ The following six geometries are included for comparative analysis:
 
 These are generated using thermal-equivalent wall thickness modeling.
 
-**Illustration: Nose Profile Meshes**
+**Nose Profile Meshes**
 
 <img width="980" height="691" alt="image" src="https://github.com/user-attachments/assets/bcf83fa1-0d3c-4ff8-8d6d-544bba31e334" />
 
@@ -54,7 +54,7 @@ The simulation features a dashboard showing:
 - Color maps indicating nose-to-base thermal gradients
 - Time, altitude, velocity, and Mach overlays
 
-**Illustration: 3D Thermal Visualization Dashboard**
+**3D Thermal Visualization Dashboard**
 
 <img width="1558" height="1237" alt="image" src="https://github.com/user-attachments/assets/ab8d59d7-9ebb-481e-a529-7d025132e2d6" />
 
