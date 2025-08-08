@@ -33,7 +33,7 @@
 
 ## 🚀 Overview
 
-A high-performance thermal analysis system for rocket nose cone geometries, implementing GPU-accelerated finite element analysis (FEA) to simulate aerodynamic heating during atmospheric flight. The system evaluates six different nose cone profiles in parallel, providing comparative thermal performance metrics critical for aerospace design decisions.
+This is a project that demonstrates differential physics engine that performs GPU-accelerated finite element analysis (FEA) using Pytorch. The simulate performs heat accumulation, diffusion, and loss at the nose of Falcon 9 rocket for 60 seconds following the launch. The system evaluates six different nose cone profiles in parallel, providing comparative thermal performance metrics critical for aerospace design decisions.
 
 ### Key Features
 
