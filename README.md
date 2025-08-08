@@ -310,7 +310,8 @@ for profile, data in results.items():
 
 ### Thermal Performance Ranking
 
-**[INSERT DIAGRAM: 3D heat distribution visualization showing all 6 profiles]**
+<img width="1020" height="682" alt="image" src="https://github.com/user-attachments/assets/fb2fad7a-8ea5-4979-955a-3d1987da54fb" />
+
 
 | Rank | Profile | Max Temperature | Final Temperature | Thermal Efficiency |
 |------|---------|----------------|-------------------|-------------------|
