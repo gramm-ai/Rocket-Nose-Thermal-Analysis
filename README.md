@@ -1,4 +1,4 @@
-# Rocket Nose Cone Thermal Analysis System
+# Differential Physics Engine Demo using Pytorch: Thermal FEA on Rocket Nose during Launch
 
 ---
 
