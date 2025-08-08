@@ -2,7 +2,8 @@
 
 ---
 
-<img width="980" height="691" alt="image" src="https://github.com/user-attachments/assets/e5071305-07b5-4bcd-ac04-f7e7e434ddd1" />
+<img width="1160" height="929" alt="image" src="https://github.com/user-attachments/assets/852199d6-1b0b-43d2-af7b-b46a8ddf77d0" />
+
 
 ---
 
@@ -41,7 +42,7 @@ This is a project that demonstrates differential physics engine that performs GP
 - **GPU Acceleration**: CUDA-enabled FEA using PyTorch with RTX 3090 optimization
 - **Real-time Visualization**: 3D heat distribution with live updates
 - **Hexahedral Mesh Generation**: Pure hex elements for superior thin-wall analysis
-- **Physics-Based Modeling**: Comprehensive heat transfer including conduction, convection, and radiation
+- **Differential Physics Engine**: Comprehensive heat transfer including conduction, convection, and radiation
 
 ### Applications
 
