@@ -4,7 +4,7 @@
 
 
 
-<img width="719" height="540" alt="rocket_mesh_comparison" src="https://github.com/user-attachments/assets/1ee9fe95-53c4-4ded-bce5-face9428efd6" />
+<img width="1160" height="871" alt="rocket_mesh_comparison" src="https://github.com/user-attachments/assets/1ee9fe95-53c4-4ded-bce5-face9428efd6" />
 
 
 ---
@@ -12,6 +12,46 @@
 
 <img width="1160" height="929" alt="image" src="https://github.com/user-attachments/assets/852199d6-1b0b-43d2-af7b-b46a8ddf77d0" />
 
+
+---
+## 🚀 Overview
+
+This project demonstrates a GPU-accelerated differential physics engine that performs finite element analysis (FEA) using PyTorch. The simulation models heat accumulation, diffusion, and loss at the nose of a Falcon 9 rocket for 60 seconds following launch. The system evaluates six different nose cone profiles in parallel, providing comparative thermal performance metrics critical for aerospace design decisions.
+
+### 🎯 Project Vision: From FEA to GenAI
+
+This demonstration is the **first in a series** exploring how Generative AI techniques can revolutionize engineering design space exploration. Traditional engineering optimization relies on:
+- Months of iterative FEA simulations
+- Complex differential equations with approximate boundary conditions  
+- Computationally expensive physics solvers
+- Limited exploration of design alternatives
+
+**Our goal**: Apply techniques from image generation models (like Stable Diffusion) to physics simulations, creating an **Accelerated Physics Engine (APE)** that can:
+1. **Train on FEA results** to learn the underlying physics
+2. **Predict physical behavior** in milliseconds instead of minutes
+3. **Enable GenAI-driven design** where engineers describe requirements in natural language
+4. **Compress months of optimization** into hours of computation
+
+This FEA implementation generates the high-fidelity training data (36,000+ timesteps) needed to train neural networks that can approximate complex physical phenomena—bridging the gap between traditional engineering and modern AI.
+
+### Key Features
+
+- **Parallel Processing**: 6 simultaneous simulations optimized for multi-core CPUs
+- **GPU Acceleration**: CUDA-enabled FEA using PyTorch with RTX 3090 optimization
+- **Real-time Visualization**: 3D heat distribution with live updates
+- **Hexahedral Mesh Generation**: Pure hex elements for superior thin-wall analysis
+- **Differential Physics Engine**: Comprehensive heat transfer including conduction, convection, and radiation
+- **AI-Ready Data Generation**: Structured output for training physics-informed neural networks
+
+### Applications
+
+- Thermal protection system (TPS) design
+- Nose cone geometry optimization
+- Material selection for heat shields
+- Reentry vehicle analysis
+- Launch vehicle fairing design
+- **Training data for Physics-Informed Neural Networks (PINNs)**
+- **Foundation for Accelerated Physics Engines**
 
 ---
 
