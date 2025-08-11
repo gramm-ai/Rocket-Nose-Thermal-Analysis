@@ -42,7 +42,8 @@ Advanced Finite Element Analysis (FEA) system for thermal analysis of rocket nos
 - **Thermal Equivalent Modeling**: Accounts for structural mass (stringers, frames) in heat capacity
 
 <br>
-<img width="1024" height="872" alt="rocket_mesh_comparison" src="https://github.com/user-attachments/assets/ef8a43dc-e0d3-487c-92ca-7579cc096a39" />
+<img width="1024" height="710" alt="nose_profiles_comparison_20250810_011300" src="https://github.com/user-attachments/assets/d284a2dc-ef3d-4629-bc3c-6a75a571af4a" />
+
 <br>
 
 ## 📊 System Architecture
