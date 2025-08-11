@@ -1,10 +1,10 @@
-# Rocket Nose Thermal Analysis - FEA to AI Pipeline
+# Rocket Nose Thermal Analysis
 
 ## 🎯 Project Vision: From Stable Diffusion to Rocket Science
 
 This project explores an intriguing question: could the principles behind Stable Diffusion's image generation be applied to physics simulations? Specifically, could deep neural networks be trained to emulate physics processes in a way that permits much larger time steps than traditional finite-element analysis (FEA), while preserving accuracy?
 
-### The Grand Vision: FEA → APE → GenAI
+### The Process: FEA → APE → GenAI + APE
 
 Traditional Finite Element Analysis (FEA) for complex systems can take hours — or even days — to complete. Engineers often spend months exploring design spaces. But what if we could train a Physics Engine DNN on thousands of FEA runs, producing an Accelerated Physics Engine (APE) capable of predicting physical behavior in a single forward pass?
 
@@ -41,25 +41,25 @@ Advanced Finite Element Analysis (FEA) system for thermal analysis of rocket nos
 - **High-Fidelity Meshes**: Hexahedral elements with 19,200-46,080 nodes per profile
 - **Thermal Equivalent Modeling**: Accounts for structural mass (stringers, frames) in heat capacity
 
-<!-- Insert mesh generation diagram here -->
-<!-- ![Mesh Generation](./plots/mesh_generation_6profiles.png) -->
-<!-- The above image should show the 6 nose profiles with their mesh structures -->
+<br>
+<img width="1024" height="872" alt="rocket_mesh_comparison" src="https://github.com/user-attachments/assets/ef8a43dc-e0d3-487c-92ca-7579cc096a39" />
+<br>
 
 ## 📊 System Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    SIMULATION MANAGER                        │
-│                  (rocket_simulation.py)                      │
+│                    SIMULATION MANAGER                       │
+│                  (rocket_simulation.py)                     │
 ├─────────────────────────────────────────────────────────────┤
-│                                                              │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐     │
-│  │ Mesh Engine  │  │Physics Engine│  │Visualization │     │
-│  │(rocket_mesh) │──►(rocket_physics)──►(rocket_viz)  │     │
-│  └──────────────┘  └──────────────┘  └──────────────┘     │
-│         │                  │                  │              │
-│    Hexahedral         GPU-Accelerated    Real-Time         │
-│    Mesh Gen          Heat Transfer       3D Display        │
+│                                                             │
+│  ┌──────────────┐     ┌───────────────┐   ┌──────────────┐  │
+│  │ Mesh Engine  │     │Physics Engine │   │Visualization │  │
+│  │(rocket_mesh) │ ──► (rocket_physics)  ──►(rocket_viz)  │  │
+│  └──────────────┘     └───────────────┘   └──────────────┘  │
+│         │                    │                  │           │
+│    Hexahedral         GPU-Accelerated       Flight Time     │
+│     Mesh Gen            Heat Transfer        Heat Monitor   │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -248,9 +248,10 @@ Fo = α × Δt / L² < 0.4
 - Flight status display (altitude, velocity, Mach number)
 - Per-profile statistics (max, mean, std deviation)
 
-<!-- Insert heat distribution visualization here -->
-<!-- ![Heat Distribution](./plots/fea_heat_distribution_t60s_001.png) -->
-<!-- The above image should show the 6 profiles with temperature distribution during flight -->
+<br>
+<img width="919" height="847" alt="rocket_nose_thermal_distr" src="https://github.com/user-attachments/assets/dc6086b4-ed59-43dd-941b-f24bfb04f01f" />
+
+<br>
 
 ### Post-Processing
 ```python
