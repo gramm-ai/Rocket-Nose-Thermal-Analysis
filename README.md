@@ -251,8 +251,7 @@ Fo = α × Δt / L² < 0.4
 
 <br>
 <img width="947" height="883" alt="rocket_nose_thermal_distr" src="https://github.com/user-attachments/assets/b480ba00-eff5-47e7-a701-b587e6534d1f" />
-
-
+<br>
 <br>
 
 ### Post-Processing
