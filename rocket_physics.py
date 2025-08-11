@@ -1,14 +1,7 @@
 """
 rocket_physics.py - GPU-Optimized Physics Engine for Rocket Thermal Analysis
-High-performance FEA engine for heat transfer simulation using RTX 3090
 
-Key Features:
-1. Aerodynamic heating from air friction
-2. Heat conduction through hexahedral elements
-3. Radiation and convection heat losses
-4. GPU-accelerated using PyTorch and CUDA
-5. Support for parallel instances
-6. Real-time monitoring interface
+- (8/10/25) Adaptive time stepping based on Fourier number stability
 
 Optimized for RTX 3090 (24GB VRAM, 10496 CUDA cores)
 """
@@ -27,12 +20,18 @@ warnings.filterwarnings('ignore', category=UserWarning)
 
 @dataclass
 class SimulationConfig:
-    """Configuration for physics simulation"""
+    """Configuration for physics simulation with adaptive time stepping"""
+
     # Time stepping
-    time_step: float = 0.01  # seconds
+    time_step: float = 0.005  # Reduced from 0.01 for better accuracy
     adaptive_timestep: bool = True
-    min_timestep: float = 1e-4
-    max_timestep: float = 0.1
+    min_timestep: float = 5e-5  # Reduced from 1e-4 for very stiff problems
+    max_timestep: float = 0.05  # Reduced from 0.1 for better transient capture
+
+    # Adaptive time step control
+    target_temp_change: float = 0.25  # Reduced from 1.0 K for accuracy
+    fourier_safety_factor: float = 0.4  # Fourier number limit (< 0.5 for stability)
+    mesh_resolution: str = 'fine'  # Used to adjust time steps
 
     # Physics parameters
     enable_aerodynamic_heating: bool = True
@@ -48,10 +47,19 @@ class SimulationConfig:
     monitor_interval: int = 10  # Steps between monitoring updates
     enable_profiling: bool = False
 
+    def get_initial_timestep(self) -> float:
+        """Get mesh-resolution-aware initial time step"""
+        if self.mesh_resolution == 'fine':
+            return 0.002  # 2 ms for fine meshes
+        elif self.mesh_resolution == 'medium':
+            return 0.005  # 5 ms for medium meshes
+        else:  # coarse
+            return 0.01  # 10 ms for coarse meshes
+
 
 @dataclass
 class MaterialProperties:
-    """Thermal material properties"""
+    """Thermal material properties with diffusivity calculation"""
     # Aluminum-Lithium 2195 (Falcon 9 material)
     thermal_conductivity: float = 120.0  # W/(m·K)
     density: float = 2700.0  # kg/m³
@@ -61,6 +69,11 @@ class MaterialProperties:
 
     # Temperature-dependent properties (optional)
     use_temperature_dependent: bool = False
+
+    @property
+    def thermal_diffusivity(self) -> float:
+        """Calculate thermal diffusivity α = k/(ρ·cp)"""
+        return self.thermal_conductivity / (self.density * self.specific_heat)
 
     def get_conductivity(self, temperature: torch.Tensor) -> torch.Tensor:
         """Get temperature-dependent thermal conductivity"""
@@ -79,8 +92,6 @@ class RocketPhysicsEngine:
     """
     GPU-Optimized Physics Engine for Rocket Thermal FEA
 
-    Implements finite element analysis for heat transfer in rocket structures
-    using hexahedral elements and GPU acceleration.
     """
 
     # Physical constants
@@ -109,11 +120,20 @@ class RocketPhysicsEngine:
         self.material = material or MaterialProperties()
         self.instance_id = instance_id
 
+        # Update config based on mesh resolution if available
+        if hasattr(mesh, 'mesh_resolution'):
+            self.config.mesh_resolution = mesh.mesh_resolution
+            # Adjust initial time step based on mesh
+            self.config.time_step = self.config.get_initial_timestep()
+
         # Setup GPU device
         self.device = self._setup_device(device_id)
 
         # Initialize mesh data on GPU
         self._initialize_gpu_data()
+
+        # Calculate mesh characteristic lengths for time stepping
+        self._calculate_mesh_characteristics()
 
         # Build FEA matrices
         self._build_fem_system()
@@ -129,10 +149,19 @@ class RocketPhysicsEngine:
         self.total_time = 0.0
         self.computation_times = {}
 
+        # Time step statistics
+        self.dt_history = []
+        self.max_dt_used = 0.0
+        self.min_dt_used = float('inf')
+
         print(f"\n[Instance {instance_id}] Physics Engine Initialized")
         print(f"  Device: {self.device}")
         print(f"  Nodes: {self.n_nodes:,}")
         print(f"  Elements: {self.n_elements:,}")
+        print(f"  Mesh resolution: {self.config.mesh_resolution.upper()}")
+        print(f"  Initial time step: {self.config.time_step * 1000:.2f} ms")
+        print(f"  Target ΔT/step: {self.config.target_temp_change:.2f} K")
+        print(f"  Fourier safety: {self.config.fourier_safety_factor:.2f}")
         print(f"  Memory allocated: {torch.cuda.memory_allocated(self.device) / 1e9:.2f} GB")
 
     def _setup_device(self, device_id: int) -> torch.device:
@@ -197,7 +226,6 @@ class RocketPhysicsEngine:
             self.nose_nodes = torch.where(nose_mask)[0]
         else:
             # Fallback: estimate boundary nodes based on radius
-            print("  Warning: No boundary information in mesh, estimating...")
             radii = torch.sqrt(self.nodes[:, 0] ** 2 + self.nodes[:, 1] ** 2)
             threshold = torch.quantile(radii, 0.8)
             boundary_mask = radii > threshold
@@ -213,6 +241,58 @@ class RocketPhysicsEngine:
 
         print(f"  Boundary nodes: {len(self.boundary_nodes):,}")
         print(f"  Nose region nodes: {len(self.nose_nodes):,}")
+
+    def _calculate_mesh_characteristics(self):
+        """Calculate characteristic mesh lengths for time step control"""
+        # Calculate minimum element size for Fourier number check
+        element_sizes = []
+
+        # Sample first 100 elements for efficiency
+        n_sample = min(100, self.n_elements)
+        for i in range(n_sample):
+            elem_nodes = self.nodes[self.elements[i]]
+
+            # Calculate edge lengths
+            edges = []
+            # Edges of hexahedron
+            edge_pairs = [
+                (0, 1), (1, 2), (2, 3), (3, 0),  # Bottom face
+                (4, 5), (5, 6), (6, 7), (7, 4),  # Top face
+                (0, 4), (1, 5), (2, 6), (3, 7)  # Vertical edges
+            ]
+
+            for n1, n2 in edge_pairs:
+                edge_length = torch.norm(elem_nodes[n2] - elem_nodes[n1]).item()
+                edges.append(edge_length)
+
+            element_sizes.append(min(edges))
+
+        # Get minimum element size
+        self.min_element_size = min(element_sizes) if element_sizes else 0.001
+        self.avg_element_size = np.mean(element_sizes) if element_sizes else 0.005
+
+        # Calculate critical time step based on Fourier number
+        # Fo = α * dt / L² < 0.5 for stability
+        # dt_critical = Fo_max * L² / α
+        alpha = self.material.thermal_diffusivity
+        self.dt_fourier_critical = (self.config.fourier_safety_factor *
+                                    self.min_element_size ** 2 / alpha)
+
+        # Calculate thermal response time
+        # For wall thickness
+        if hasattr(self.mesh, 'shape') and hasattr(self.mesh.shape, 'wall_thickness'):
+            wall_thickness = self.mesh.shape.wall_thickness
+        else:
+            wall_thickness = 0.015  # Default 15mm
+
+        self.thermal_response_time = wall_thickness ** 2 / alpha
+
+        print(f"\n  Mesh Characteristics:")
+        print(f"    Min element size: {self.min_element_size * 1000:.2f} mm")
+        print(f"    Avg element size: {self.avg_element_size * 1000:.2f} mm")
+        print(f"    Critical dt (Fourier): {self.dt_fourier_critical * 1000:.3f} ms")
+        print(f"    Thermal response time: {self.thermal_response_time:.3f} s")
+        print(f"    Thermal diffusivity: {alpha:.2e} m²/s")
 
     def _build_fem_system(self):
         """Build FEM system matrices on GPU"""
@@ -234,8 +314,6 @@ class RocketPhysicsEngine:
         # Process elements in batches for efficiency
         batch_size = min(self.config.batch_size, self.n_elements)
 
-        print(f"    Building mass matrix: {self.n_elements} elements, batch size {batch_size}")
-
         for i in range(0, self.n_elements, batch_size):
             batch_elements = self.elements[i:i + batch_size]
 
@@ -246,7 +324,6 @@ class RocketPhysicsEngine:
             volumes = self._compute_hex_volumes_batch(element_nodes)
 
             # Distribute mass to nodes (lumped mass)
-            # Each node gets 1/8 of the element volume
             node_mass = volumes / 8.0  # [batch] tensor
 
             # Accumulate to global mass matrix
@@ -260,15 +337,9 @@ class RocketPhysicsEngine:
         # Ensure positive mass
         self.mass_lumped = torch.clamp(self.mass_lumped, min=1e-10)
 
-        print(f"    Mass matrix complete: min={self.mass_lumped.min():.3e}, max={self.mass_lumped.max():.3e}")
-
     def _build_stiffness_matrix(self):
         """Build thermal stiffness matrix (conductivity matrix)"""
         # For large meshes, we use a matrix-free approach
-        # Store element stiffness matrices instead of global matrix
-
-        print(f"    Building stiffness matrix: {self.n_elements} elements")
-
         self.element_stiffness = []
         batch_size = min(self.config.batch_size, self.n_elements)
 
@@ -285,27 +356,15 @@ class RocketPhysicsEngine:
         # Concatenate all batches
         if len(self.element_stiffness) > 0:
             self.element_stiffness = torch.cat(self.element_stiffness, dim=0)
-            print(f"    Element stiffness shape: {self.element_stiffness.shape}")
         else:
             # Fallback: create identity-like stiffness for stability
             print("    Warning: Could not compute stiffness matrices, using fallback")
             self.element_stiffness = torch.eye(8, device=self.device).unsqueeze(0).repeat(self.n_elements, 1, 1)
 
     def _compute_hex_volumes_batch(self, element_nodes: torch.Tensor) -> torch.Tensor:
-        """
-        Compute volumes for batch of hexahedral elements
-
-        Args:
-            element_nodes: [batch, 8, 3] tensor of node coordinates
-
-        Returns:
-            [batch] tensor of volumes
-        """
+        """Compute volumes for batch of hexahedral elements"""
         # Simplified volume calculation using decomposition
-        # Hex can be decomposed into 6 tetrahedra
-
-        # Get corner nodes
-        v0 = element_nodes[:, 0]  # [batch, 3]
+        v0 = element_nodes[:, 0]
         v1 = element_nodes[:, 1]
         v2 = element_nodes[:, 2]
         v3 = element_nodes[:, 3]
@@ -315,8 +374,7 @@ class RocketPhysicsEngine:
         v7 = element_nodes[:, 7]
 
         # Compute volume using divergence theorem
-        # Approximate as sum of tetrahedral volumes
-        center = element_nodes.mean(dim=1)  # [batch, 3]
+        center = element_nodes.mean(dim=1)
 
         volumes = torch.zeros(element_nodes.shape[0], device=self.device)
 
@@ -331,7 +389,6 @@ class RocketPhysicsEngine:
         ]
 
         for face in faces:
-            # Compute face area and normal
             v_a, v_b, v_c, v_d = face
 
             # Diagonal split into triangles
@@ -345,15 +402,7 @@ class RocketPhysicsEngine:
         return torch.abs(volumes) / 2  # Correction factor
 
     def _compute_element_stiffness_batch(self, element_nodes: torch.Tensor) -> Optional[torch.Tensor]:
-        """
-        Compute stiffness matrices for batch of elements
-
-        Args:
-            element_nodes: [batch, 8, 3] tensor
-
-        Returns:
-            [batch, 8, 8] tensor of element stiffness matrices, or None if failed
-        """
+        """Compute stiffness matrices for batch of elements"""
         batch_size = element_nodes.shape[0]
         K = torch.zeros(batch_size, 8, 8, device=self.device)
 
@@ -392,44 +441,30 @@ class RocketPhysicsEngine:
             try:
                 J_inv = torch.inverse(J_valid)
             except:
-                # If inverse fails, skip this Gauss point
                 continue
 
             # Transform derivatives to physical coordinates
-            dN_dx = torch.matmul(dN_dxi.unsqueeze(0), J_inv.transpose(-2, -1))  # [valid_batch, 8, 3]
+            dN_dx = torch.matmul(dN_dxi.unsqueeze(0), J_inv.transpose(-2, -1))
 
             # Compute element stiffness contribution
-            # K += w * det_J * (dN_dx @ dN_dx.T) * k_thermal
             k_thermal = self.material.thermal_conductivity
-
-            K_contribution = torch.matmul(dN_dx, dN_dx.transpose(-2, -1))  # [valid_batch, 8, 8]
+            K_contribution = torch.matmul(dN_dx, dN_dx.transpose(-2, -1))
 
             # Update only valid elements
             K[valid_mask] += w * torch.abs(det_J_valid).unsqueeze(-1).unsqueeze(-1) * K_contribution * k_thermal
 
         if not valid_elements_found:
-            # Return None to indicate failure
             return None
 
         return K
 
     def _hex_shape_derivatives(self, xi: torch.Tensor) -> torch.Tensor:
-        """
-        Compute shape function derivatives for hexahedral element
-
-        Args:
-            xi: [3] tensor of natural coordinates (r, s, t)
-
-        Returns:
-            [8, 3] tensor of shape function derivatives
-        """
-        # Extract coordinates as scalars
+        """Compute shape function derivatives for hexahedral element"""
         if xi.dim() > 0:
             r = xi[0].item()
             s = xi[1].item()
             t = xi[2].item()
         else:
-            # Single scalar case (shouldn't happen but handle it)
             r = s = t = xi.item()
 
         # Compute derivatives of shape functions w.r.t natural coordinates
@@ -463,29 +498,111 @@ class RocketPhysicsEngine:
             self._compute_surface_areas()
 
     def _compute_surface_areas(self):
-        """Compute surface areas for boundary nodes"""
+        """Compute surface areas for boundary nodes based on actual geometry"""
         if len(self.boundary_nodes) == 0:
             self.surface_areas = torch.tensor([], device=self.device)
             return
 
-        # Simplified: assign uniform area based on mesh density
-        total_surface = 2 * np.pi * 1.83 * 6.5  # Approximate for nose cone
-        self.surface_areas = torch.full(
-            (len(self.boundary_nodes),),
-            total_surface / max(len(self.boundary_nodes), 1),
-            device=self.device
-        )
+        # Get boundary node positions
+        boundary_positions = self.nodes[self.boundary_nodes]
+
+        # Get shape parameters
+        nose_type = str(self.mesh.shape.nose_type).lower()
+        nose_length = float(self.mesh.shape.nose_length)
+        body_radius = float(self.mesh.shape.body_radius)
+
+        # Normalize nose type
+        if 'von_karman' in nose_type or 'karman' in nose_type:
+            nose_type = 'von_karman'
+        elif 'ogive' in nose_type:
+            nose_type = 'ogive'
+        elif 'power' in nose_type:
+            nose_type = 'power'
+
+        # Calculate actual surface area based on nose geometry
+        if nose_type == 'conical':
+            slant_height = np.sqrt(nose_length ** 2 + body_radius ** 2)
+            total_surface = np.pi * body_radius * slant_height
+        elif nose_type == 'elliptical':
+            a = body_radius
+            b = nose_length
+            if b > a:
+                e = np.sqrt(1 - (a / b) ** 2)
+                total_surface = 2 * np.pi * a ** 2 * (1 + (b ** 2 / (a ** 2 * e)) * np.arctanh(e))
+            else:
+                e = np.sqrt(1 - (b / a) ** 2) if a > 0 else 0
+                total_surface = 2 * np.pi * a ** 2 * (
+                            1 + (b ** 2 / (a ** 2 * max(e, 0.001))) * np.arctanh(min(e, 0.999)))
+        elif nose_type == 'ogive':
+            rho = (body_radius ** 2 + nose_length ** 2) / (2 * body_radius)
+            if rho > 0 and body_radius / rho <= 1.0:
+                theta = np.arcsin(min(body_radius / rho, 1.0))
+                total_surface = 2 * np.pi * rho ** 2 * theta
+            else:
+                total_surface = 2 * np.pi * body_radius * nose_length * 0.8
+        elif nose_type == 'parabolic':
+            if nose_length > 0:
+                total_surface = (np.pi * body_radius / 6) * (
+                        (body_radius ** 2 + 4 * nose_length ** 2) ** (3 / 2) - body_radius ** 3
+                ) / nose_length ** 2
+            else:
+                total_surface = np.pi * body_radius ** 2
+        elif nose_type == 'von_karman':
+            rho = (body_radius ** 2 + nose_length ** 2) / (2 * body_radius)
+            if rho > 0 and body_radius / rho <= 1.0:
+                theta = np.arcsin(min(body_radius / rho, 1.0))
+                total_surface = 2 * np.pi * rho ** 2 * theta * 0.95
+            else:
+                total_surface = 2 * np.pi * body_radius * nose_length * 0.75
+        else:
+            total_surface = 2 * np.pi * body_radius * nose_length * 0.8
+
+        # Ensure positive surface area
+        total_surface = max(total_surface, 0.1)
+
+        # Get z-positions (axial) and radial positions
+        z_positions = boundary_positions[:, 2]
+        r_positions = torch.sqrt(boundary_positions[:, 0] ** 2 + boundary_positions[:, 1] ** 2)
+
+        # Normalized position along nose
+        z_norm = z_positions / nose_length if nose_length > 0 else torch.ones_like(z_positions)
+        z_norm = torch.clamp(z_norm, 0.0, 1.0)
+
+        # Calculate area factors based on shape
+        if nose_type == 'conical':
+            area_factor = torch.where(z_norm < 0.01, torch.full_like(z_norm, 0.01), z_norm)
+        elif nose_type == 'elliptical':
+            local_radius = body_radius * torch.sqrt(torch.clamp(1 - (1 - z_norm) ** 2, min=0.0))
+            area_factor = local_radius / body_radius
+        elif nose_type == 'ogive':
+            area_factor = z_norm ** 0.8
+        elif nose_type == 'von_karman':
+            area_factor = z_norm ** 0.85
+        elif nose_type == 'power':
+            nose_power = float(getattr(self.mesh.shape, 'nose_power', 0.75))
+            area_factor = z_norm ** nose_power
+        else:
+            area_factor = 0.1 + 0.9 * z_norm
+
+        # Calculate surface area for each node
+        base_area = total_surface / len(self.boundary_nodes)
+        surface_areas = base_area * (0.5 + area_factor)
+
+        # Normalize to ensure total area is conserved
+        surface_areas *= total_surface / torch.sum(surface_areas)
+
+        self.surface_areas = surface_areas
 
     def _initialize_state(self):
-        """Initialize simulation state variables"""
+        """Initialize simulation state variables with time stepping"""
         # Temperature field
         initial_temp = 288.15  # K (15°C)
         self.temperature = torch.full((self.n_nodes,), initial_temp,
                                       dtype=torch.float32, device=self.device)
 
-        # Time tracking
+        # Time tracking - use mesh-aware initial time step
         self.time = 0.0
-        self.dt = self.config.time_step
+        self.dt = self.config.get_initial_timestep()
 
         # Flight state
         self.velocity = 0.0
@@ -508,7 +625,8 @@ class RocketPhysicsEngine:
             'max_temp': [],
             'avg_temp': [],
             'nose_max_temp': [],
-            'heat_flux_total': []
+            'heat_flux_total': [],
+            'dt_used': []  # Track time steps used
         }
 
     def _setup_flight_profile(self):
@@ -560,49 +678,140 @@ class RocketPhysicsEngine:
             self.heat_flux_aero.zero_()
             return
 
-        # Timer for profiling
-        if self.config.enable_profiling:
-            torch.cuda.synchronize()
-            start = time.perf_counter()
+        # Get nose shape parameters
+        nose_type = str(self.mesh.shape.nose_type).lower()
+        nose_length = float(self.mesh.shape.nose_length)
+        body_radius = float(self.mesh.shape.body_radius)
 
-        # Recovery temperature (stagnation temperature)
-        recovery_factor = 0.9  # Turbulent boundary layer
+        # Normalize nose type
+        if 'von_karman' in nose_type or 'karman' in nose_type or 'haack' in nose_type:
+            nose_type = 'von_karman'
+        elif 'ogive' in nose_type:
+            nose_type = 'ogive'
+        elif 'power' in nose_type:
+            nose_type = 'power'
+
+        # Calculate effective nose radius based on shape
+        if nose_type == 'conical':
+            R_nose = 0.05
+            shape_factor = 1.3
+        elif nose_type == 'elliptical':
+            R_nose = body_radius * 0.7
+            shape_factor = 0.7
+        elif nose_type == 'parabolic':
+            R_nose = body_radius * 0.4
+            shape_factor = 0.85
+        elif nose_type == 'ogive':
+            rho = (body_radius ** 2 + nose_length ** 2) / (2 * body_radius)
+            R_nose = min(rho * 0.3, body_radius * 0.5)
+            shape_factor = 1.0
+        elif nose_type == 'von_karman':
+            R_nose = body_radius * 0.45
+            shape_factor = 0.9
+        elif nose_type == 'power':
+            nose_power = float(getattr(self.mesh.shape, 'nose_power', 0.75))
+            R_nose = body_radius * (0.2 + 0.4 * nose_power)
+            shape_factor = 0.8 + 0.3 * (1 - nose_power)
+        else:
+            R_nose = body_radius * 0.4
+            shape_factor = 1.0
+
+        # Recovery temperature for convective heating
+        recovery_factor = 0.87
         T_recovery = self.air_temp * (1 + recovery_factor * (self.GAMMA - 1) / 2 * self.mach_number ** 2)
 
-        # Heat transfer coefficient (simplified correlation)
-        Re = self.air_density * self.velocity * 1.0 / 1.8e-5  # Reynolds number
-        h_conv = 10.0 * (Re ** 0.5) * (self.air_density ** 0.5)
-        h_conv = np.clip(h_conv, 100, 10000)
+        # Reynolds number
+        Re = self.air_density * self.velocity * 1.0 / 1.8e-5
+
+        # Heat transfer coefficient
+        if self.mach_number < 2.0:
+            if nose_type == 'conical':
+                h_base = 50.0 * (Re ** 0.5) * (self.air_density ** 0.4)
+            elif nose_type == 'elliptical':
+                h_base = 20.0 * (Re ** 0.5) * (self.air_density ** 0.4)
+            else:
+                h_base = 30.0 * (Re ** 0.5) * (self.air_density ** 0.4)
+
+            mach_factor = 1.0 + 0.3 * self.mach_number
+            h_conv = h_base * mach_factor * shape_factor
+        else:
+            K_sg = 1.1e-4
+            q_stagnation = K_sg * np.sqrt(self.air_density / R_nose) * (self.velocity ** 3) * shape_factor
+            q_stagnation = np.clip(q_stagnation, 0, 5e6)
+            h_conv = 40.0 * (Re ** 0.5) * (self.air_density ** 0.4) * shape_factor
+
+        h_conv = np.clip(h_conv, 50, 5000)
 
         # Apply heating to boundary nodes
         if len(self.boundary_nodes) > 0:
             boundary_temps = self.temperature[self.boundary_nodes]
+            boundary_positions = self.nodes[self.boundary_nodes]
 
-            # Heat flux: q = h * (T_recovery - T_wall)
-            q_aero = h_conv * (T_recovery - boundary_temps)
+            z_positions = boundary_positions[:, 2]
+            z_norm = z_positions / nose_length if nose_length > 0 else torch.ones_like(z_positions)
+            z_norm = torch.clamp(z_norm, 0.0, 1.0)
 
-            # Enhanced heating for nose region (stagnation point effects)
-            if len(self.nose_nodes) > 0:
-                nose_mask = torch.isin(self.boundary_nodes, self.nose_nodes)
-                q_aero[nose_mask] *= 2.0  # Stagnation heating factor
+            # Calculate angle factors based on shape
+            if nose_type == 'conical':
+                theta = np.arctan(body_radius / nose_length) if nose_length > 0 else 0.5
+                angle_factor = torch.full_like(z_norm, np.cos(theta * 0.5))
+            elif nose_type == 'elliptical':
+                angle_factor = 0.7 + 0.3 * torch.sqrt(torch.clamp(1 - (1 - z_norm) ** 2, min=0.0))
+            elif nose_type == 'ogive':
+                angle_factor = 0.6 + 0.4 * z_norm
+            elif nose_type == 'von_karman':
+                angle_factor = 0.65 + 0.35 * z_norm
+            elif nose_type == 'parabolic':
+                angle_factor = 0.6 + 0.4 * torch.sqrt(z_norm)
+            elif nose_type == 'power':
+                nose_power = float(getattr(self.mesh.shape, 'nose_power', 0.75))
+                angle_factor = 0.5 + 0.5 * (z_norm ** nose_power)
+            else:
+                angle_factor = 0.5 + 0.5 * z_norm
 
-            # Apply to heat flux array
+            # Heat flux distribution
+            stagnation_region = z_norm < 0.05
+            downstream_factor = torch.exp(-1.5 * z_norm)
+
+            delta_T = T_recovery - boundary_temps
+            q_conv = h_conv * delta_T * angle_factor
+
+            # Stagnation enhancement
+            if nose_type == 'conical':
+                stagnation_enhancement = 1.8
+            elif nose_type == 'elliptical':
+                stagnation_enhancement = 1.2
+            else:
+                stagnation_enhancement = 1.5
+
+            q_conv = torch.where(
+                stagnation_region,
+                q_conv * stagnation_enhancement,
+                q_conv * downstream_factor
+            )
+
+            # Shape-specific adjustments
+            if nose_type == 'conical':
+                tip_region = z_norm < 0.15
+                q_conv = torch.where(tip_region, q_conv * 1.2, q_conv * 0.9)
+            elif nose_type == 'elliptical':
+                q_conv = q_conv * 0.85
+            elif nose_type == 'von_karman':
+                q_conv = q_conv * 0.9
+            elif nose_type == 'power':
+                power_factor = 0.8 + 0.4 * (1 - float(getattr(self.mesh.shape, 'nose_power', 0.75)))
+                q_conv = q_conv * power_factor
+
+            q_conv = torch.clamp(q_conv, 0.0, 1e6)
+
             self.heat_flux_aero.zero_()
-            self.heat_flux_aero[self.boundary_nodes] = torch.clamp(q_aero, min=0.0)
-
-        if self.config.enable_profiling:
-            torch.cuda.synchronize()
-            self.computation_times['aero_heating'] = time.perf_counter() - start
+            self.heat_flux_aero[self.boundary_nodes] = q_conv
 
     @torch.no_grad()
     def compute_heat_conduction(self):
         """Compute heat conduction through structure using FEM"""
         if not self.config.enable_conduction:
             return torch.zeros_like(self.temperature)
-
-        if self.config.enable_profiling:
-            torch.cuda.synchronize()
-            start = time.perf_counter()
 
         # Initialize heat flow
         heat_flow = torch.zeros_like(self.temperature)
@@ -613,7 +822,7 @@ class RocketPhysicsEngine:
             batch_stiffness = self.element_stiffness[i:i + len(batch_elements)]
 
             # Get element temperatures
-            element_temps = self.temperature[batch_elements]  # [batch, 8]
+            element_temps = self.temperature[batch_elements]
 
             # Compute heat flow: q = K * T
             element_flow = torch.matmul(batch_stiffness, element_temps.unsqueeze(-1)).squeeze(-1)
@@ -627,10 +836,6 @@ class RocketPhysicsEngine:
         thermal_capacity = self.mass_lumped * self.material.specific_heat
         conduction_rate = -heat_flow / thermal_capacity
 
-        if self.config.enable_profiling:
-            torch.cuda.synchronize()
-            self.computation_times['conduction'] = time.perf_counter() - start
-
         return conduction_rate
 
     @torch.no_grad()
@@ -640,29 +845,20 @@ class RocketPhysicsEngine:
             self.heat_flux_radiation.zero_()
             return
 
-        if self.config.enable_profiling:
-            torch.cuda.synchronize()
-            start = time.perf_counter()
-
-        # Sky temperature (simplified)
+        # Sky temperature
         T_sky = 220.0 if self.altitude > 10000 else self.air_temp - 20.0
 
         # Apply to boundary nodes only
         if len(self.boundary_nodes) > 0:
             boundary_temps = self.temperature[self.boundary_nodes]
 
-            # Stefan-Boltzmann radiation: q = ε * σ * (T^4 - T_sky^4)
+            # Stefan-Boltzmann radiation
             q_rad = self.material.emissivity * self.STEFAN_BOLTZMANN * (
                     torch.pow(boundary_temps, 4) - T_sky ** 4
             )
 
-            # Apply to heat flux array (negative for cooling)
             self.heat_flux_radiation.zero_()
             self.heat_flux_radiation[self.boundary_nodes] = -q_rad
-
-        if self.config.enable_profiling:
-            torch.cuda.synchronize()
-            self.computation_times['radiation'] = time.perf_counter() - start
 
     @torch.no_grad()
     def compute_convection_cooling(self):
@@ -671,35 +867,81 @@ class RocketPhysicsEngine:
             self.heat_flux_convection.zero_()
             return
 
-        if self.config.enable_profiling:
-            torch.cuda.synchronize()
-            start = time.perf_counter()
-
         # Convective heat transfer coefficient
         Re = self.air_density * self.velocity * 1.0 / 1.8e-5
-        Nu = 0.037 * (Re ** 0.8)  # Turbulent flow over flat plate
-        h_conv = Nu * 0.025 / 1.0  # Simplified
+        Nu = 0.037 * (Re ** 0.8)
+        h_conv = Nu * 0.025 / 1.0
         h_conv = np.clip(h_conv, 10, 1000)
 
         # Apply to boundary nodes
         if len(self.boundary_nodes) > 0:
             boundary_temps = self.temperature[self.boundary_nodes]
-
-            # Heat flux: q = h * (T_wall - T_air)
             q_conv = h_conv * (boundary_temps - self.air_temp)
 
-            # Apply to heat flux array (negative for cooling)
             self.heat_flux_convection.zero_()
             self.heat_flux_convection[self.boundary_nodes] = -q_conv
 
-        if self.config.enable_profiling:
-            torch.cuda.synchronize()
-            self.computation_times['convection'] = time.perf_counter() - start
+    def _calculate_adaptive_timestep(self, temperature_rate: torch.Tensor) -> float:
+        """
+        Calculate adaptive time step with stability criteria
+
+        Uses multiple criteria:
+        1. Target temperature change per step
+        2. Fourier number stability
+        3. CFL-like condition for heat diffusion
+        4. Minimum fraction of thermal response time
+
+        Args:
+            temperature_rate: Current dT/dt
+
+        Returns:
+            Optimal time step
+        """
+        # Criterion 1: Target temperature change
+        max_rate = torch.max(torch.abs(temperature_rate)).item()
+        if max_rate > 0:
+            dt_temp = self.config.target_temp_change / max_rate
+        else:
+            dt_temp = self.config.max_timestep
+
+        # Criterion 2: Fourier number stability
+        # Already calculated in initialization
+        dt_fourier = self.dt_fourier_critical
+
+        # Criterion 3: Fraction of thermal response time
+        # Time step should be small fraction of response time
+        dt_response = self.thermal_response_time / 50  # 2% of response time
+
+        # Criterion 4: Rate of change of heating
+        # During rapid transients (e.g., initial heating), use smaller steps
+        if self.time < 10.0:  # First 10 seconds
+            dt_transient = self.config.min_timestep * 5
+        elif self.time < 30.0:  # Next 20 seconds
+            dt_transient = self.config.min_timestep * 10
+        else:
+            dt_transient = self.config.max_timestep
+
+        # Take minimum of all criteria
+        dt_optimal = min(dt_temp, dt_fourier, dt_response, dt_transient)
+
+        # Apply bounds
+        dt_optimal = max(self.config.min_timestep, min(dt_optimal, self.config.max_timestep))
+
+        # Smooth time step changes to avoid oscillations
+        # Don't change dt by more than 20% per step
+        if hasattr(self, 'dt'):
+            max_change = 0.2
+            if dt_optimal > self.dt * (1 + max_change):
+                dt_optimal = self.dt * (1 + max_change)
+            elif dt_optimal < self.dt * (1 - max_change):
+                dt_optimal = self.dt * (1 - max_change)
+
+        return dt_optimal
 
     @torch.no_grad()
     def step(self) -> Dict[str, Any]:
         """
-        Perform one simulation time step
+        Perform one simulation time step with adaptive stepping
 
         Returns:
             Dictionary with current state information
@@ -720,7 +962,6 @@ class RocketPhysicsEngine:
         # Convert flux to temperature rate for boundary nodes
         boundary_rate = torch.zeros_like(self.temperature)
         if len(self.boundary_nodes) > 0:
-            # q = h * A * (T2 - T1) => dT/dt = q * A / (m * cp)
             masses = self.mass_lumped[self.boundary_nodes]
             areas = self.surface_areas if hasattr(self, 'surface_areas') else torch.ones_like(masses)
             cp = self.material.specific_heat
@@ -735,14 +976,17 @@ class RocketPhysicsEngine:
         # Total temperature rate
         total_rate = boundary_rate + conduction_rate
 
-        # Adaptive time stepping
+        # Calculate adaptive time step
         if self.config.adaptive_timestep:
-            max_rate = torch.max(torch.abs(total_rate)).item()
-            if max_rate > 0:
-                # Target maximum temperature change per step
-                target_change = 1.0  # K
-                new_dt = min(target_change / max_rate, self.config.max_timestep)
-                self.dt = max(new_dt, self.config.min_timestep)
+            self.dt = self._calculate_adaptive_timestep(total_rate)
+
+            # Track time step statistics
+            self.dt_history.append(self.dt)
+            if len(self.dt_history) > 100:
+                self.dt_history = self.dt_history[-100:]  # Keep last 100
+
+            self.max_dt_used = max(self.max_dt_used, self.dt)
+            self.min_dt_used = min(self.min_dt_used, self.dt)
 
         # Update temperature
         self.temperature += self.dt * total_rate
@@ -790,6 +1034,7 @@ class RocketPhysicsEngine:
             'time': self.time,
             'step': self.step_count,
             'dt': self.dt,
+            'dt_ms': self.dt * 1000,  # Time step in milliseconds
             'velocity': self.velocity,
             'altitude': self.altitude,
             'mach_number': self.mach_number,
@@ -812,6 +1057,7 @@ class RocketPhysicsEngine:
         self.monitor_data['avg_temp'].append(state['avg_temperature'])
         self.monitor_data['nose_max_temp'].append(state['nose_max_temperature'])
         self.monitor_data['heat_flux_total'].append(state['total_heat_flux'])
+        self.monitor_data['dt_used'].append(state['dt_ms'])  # Track time steps
 
         # Keep only last 1000 points for memory efficiency
         max_points = 1000
@@ -827,44 +1073,16 @@ class RocketPhysicsEngine:
         """Get monitoring data for visualization"""
         return self.monitor_data
 
-    def save_state(self, filename: str):
-        """Save current simulation state to file"""
-        state = {
-            'time': self.time,
-            'step_count': self.step_count,
-            'temperature': self.temperature.cpu().numpy(),
-            'monitor_data': self.monitor_data,
-            'flight_state': {
-                'velocity': self.velocity,
-                'altitude': self.altitude,
-                'mach_number': self.mach_number
-            }
-        }
-        torch.save(state, filename)
-        print(f"[Instance {self.instance_id}] State saved to {filename}")
-
-    def load_state(self, filename: str):
-        """Load simulation state from file"""
-        state = torch.load(filename, map_location=self.device)
-
-        self.time = state['time']
-        self.step_count = state['step_count']
-        self.temperature = torch.tensor(state['temperature'], device=self.device)
-        self.monitor_data = state['monitor_data']
-
-        if 'flight_state' in state:
-            self.velocity = state['flight_state']['velocity']
-            self.altitude = state['flight_state']['altitude']
-            self.mach_number = state['flight_state']['mach_number']
-
-        print(f"[Instance {self.instance_id}] State loaded from {filename}")
-
     def get_performance_stats(self) -> Dict[str, float]:
-        """Get performance statistics"""
+        """Get performance statistics with time step info"""
         stats = {
             'total_steps': self.step_count,
             'simulation_time': self.time,
             'average_dt': self.time / max(self.step_count, 1),
+            'min_dt_used': self.min_dt_used,
+            'max_dt_used': self.max_dt_used,
+            'current_dt': self.dt,
+            'avg_dt_recent': np.mean(self.dt_history) if self.dt_history else self.dt,
             'gpu_memory_used': torch.cuda.memory_allocated(self.device) / 1e9 if self.device.type == 'cuda' else 0
         }
 
@@ -877,6 +1095,52 @@ class RocketPhysicsEngine:
 
         return stats
 
+    def save_state(self, filename: str):
+        """Save current simulation state to file"""
+        state = {
+            'time': self.time,
+            'step_count': self.step_count,
+            'dt': self.dt,
+            'dt_history': self.dt_history,
+            'temperature': self.temperature.cpu().numpy(),
+            'monitor_data': self.monitor_data,
+            'flight_state': {
+                'velocity': self.velocity,
+                'altitude': self.altitude,
+                'mach_number': self.mach_number
+            },
+            'time_step_stats': {
+                'min_dt_used': self.min_dt_used,
+                'max_dt_used': self.max_dt_used,
+                'dt_fourier_critical': self.dt_fourier_critical,
+                'thermal_response_time': self.thermal_response_time
+            }
+        }
+        torch.save(state, filename)
+        print(f"[Instance {self.instance_id}] State saved to {filename}")
+
+    def load_state(self, filename: str):
+        """Load simulation state from file"""
+        state = torch.load(filename, map_location=self.device)
+
+        self.time = state['time']
+        self.step_count = state['step_count']
+        self.dt = state.get('dt', self.config.time_step)
+        self.dt_history = state.get('dt_history', [])
+        self.temperature = torch.tensor(state['temperature'], device=self.device)
+        self.monitor_data = state['monitor_data']
+
+        if 'flight_state' in state:
+            self.velocity = state['flight_state']['velocity']
+            self.altitude = state['flight_state']['altitude']
+            self.mach_number = state['flight_state']['mach_number']
+
+        if 'time_step_stats' in state:
+            self.min_dt_used = state['time_step_stats'].get('min_dt_used', self.dt)
+            self.max_dt_used = state['time_step_stats'].get('max_dt_used', self.dt)
+
+        print(f"[Instance {self.instance_id}] State loaded from {filename}")
+
     def cleanup(self):
         """Clean up GPU resources"""
         if self.device.type == 'cuda':
@@ -885,7 +1149,7 @@ class RocketPhysicsEngine:
 
 
 def create_test_instance():
-    """Create a test instance of the physics engine"""
+    """Create a test instance of the physics engine """
     from rocket_mesh_hex import HexahedralRocketMesh, RocketShapeParameters
 
     print("\n" + "=" * 60)
@@ -906,13 +1170,16 @@ def create_test_instance():
         n_circumferential=24,
         n_radial=3,
         nose_only=True,
-        mesh_resolution='coarse'
+        mesh_resolution='medium'  # Specify resolution
     )
 
     # Create physics engine
     config = SimulationConfig(
-        time_step=0.01,
+        time_step=0.005,  # 5 ms initial
         adaptive_timestep=True,
+        target_temp_change=0.25,  # 0.25 K per step
+        fourier_safety_factor=0.4,
+        mesh_resolution='medium',
         enable_profiling=True
     )
 
@@ -923,21 +1190,26 @@ def create_test_instance():
     )
 
     # Run a few steps
-    print("\nRunning test simulation...")
-    for i in range(100):
+    print("\nRunning test simulation with adaptive time stepping...")
+    print(f"{'Step':>4} {'Time(s)':>8} {'dt(ms)':>8} {'V(m/s)':>7} {'T_max(°C)':>10}")
+    print("-" * 50)
+
+    for i in range(200):
         state = engine.step()
 
         if i % 20 == 0:
-            print(f"  Step {i:3d}: t={state['time']:6.2f}s, "
-                  f"v={state['velocity']:4.0f} m/s, "
-                  f"T_max={state['nose_max_temperature']:6.1f}°C")
+            print(f"{i:4d} {state['time']:8.3f} {state['dt_ms']:8.3f} "
+                  f"{state['velocity']:7.1f} {state['nose_max_temperature']:10.2f}")
 
     # Get performance stats
     stats = engine.get_performance_stats()
     print(f"\nPerformance Stats:")
     print(f"  Total steps: {stats['total_steps']}")
     print(f"  Simulation time: {stats['simulation_time']:.2f}s")
-    print(f"  Average dt: {stats['average_dt']:.4f}s")
+    print(f"  Average dt: {stats['average_dt'] * 1000:.3f} ms")
+    print(f"  Min dt used: {stats['min_dt_used'] * 1000:.3f} ms")
+    print(f"  Max dt used: {stats['max_dt_used'] * 1000:.3f} ms")
+    print(f"  Recent avg dt: {stats['avg_dt_recent'] * 1000:.3f} ms")
     print(f"  GPU memory: {stats['gpu_memory_used']:.2f} GB")
 
     # Cleanup
@@ -950,9 +1222,4 @@ if __name__ == "__main__":
     # Test the physics engine
     engine = create_test_instance()
 
-    print("\n" + "=" * 60)
-    print("Physics Engine Test Complete")
-    print("=" * 60)
-    print("\nThe engine is ready to be used by rocket_simulation.py")
-    print("Multiple instances can run in parallel on RTX 3090")
-    print("Monitor data available for rocket_visualization.py")
+    print("\nThe engine is ready for accurate FEA heat diffusion simulation")
