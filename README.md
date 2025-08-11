@@ -250,7 +250,8 @@ Fo = α × Δt / L² < 0.4
 - Per-profile statistics (max, mean, std deviation)
 
 <br>
-<img width="919" height="847" alt="rocket_nose_thermal_distr" src="https://github.com/user-attachments/assets/dc6086b4-ed59-43dd-941b-f24bfb04f01f" />
+<img width="947" height="883" alt="rocket_nose_thermal_distr" src="https://github.com/user-attachments/assets/b480ba00-eff5-47e7-a701-b587e6534d1f" />
+
 
 <br>
 
