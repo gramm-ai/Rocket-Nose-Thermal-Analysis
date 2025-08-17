@@ -315,7 +315,7 @@ This suggests we likely need a way to combine the learned components with hard p
 
 Imagine a network that predicts temperature changes in a learned latent space, but then projects these predictions back through a physics-constrained (not physics-informed ) decoder that explicitly enforces energy balance. The latent space would capture the essential dynamics such as heat flow patterns, boundary layer effects, material responses while the decoder acts to ensure that every prediction respects fundamental thermodynamics.
 
-For additional discussions:
+For additional discussions please read the full article  here:
 [Article](https://medium.com/@jisoo_63794/from-stable-diffusion-to-rocket-science-accelerating-physics-simulations-with-ai-712a2150679f)
 
 ## 📚 References
