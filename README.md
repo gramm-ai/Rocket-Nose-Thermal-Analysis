@@ -305,8 +305,18 @@ max_concurrent = min(
 
 ## 🎯 The Road Ahead: From FEA to GenAI
 
-For my thoughts on paths to accelerating FEA with physics-constrained deep neural network:
-Article: [@jisoo_63794](https://medium.com/@jisoo_63794/from-stable-diffusion-to-rocket-science-accelerating-physics-simulations-with-ai-712a2150679f)
+The key insight from SR3 and similar diffusion-based super-resolution models was about discovering that intermediate steps contain learnable patterns that can be distilled into direct mappings.
+
+Consider how progressive distillation works in super-resolution: a teacher network trained on 1000-step denoising learns the complete trajectory from noise to image. A student network then learns to predict not the next step, but perhaps 10 steps ahead, using the teacher’s intermediate states as training targets. Through multiple rounds of this process, researchers compressed 1000 steps → 100 steps → 10 steps → eventually a single forward pass. The same principle may apply to FEA time-stepping when the underlying physics is dominated by differential process such as diffusion, where our “teacher” is the full-resolution simulation with millisecond timesteps (in this rocket example), and our “student” learns to predict states at tens to hundred millisecond or even second-scale intervals.
+
+The challenge unique to physics simulation is maintaining conservation laws and numerical stability. While a slightly incorrect pixel in super-resolution might be imperceptible, violating energy conservation in thermal simulation leads to unphysical temperature divergence. (·•᷄‎ࡇ•᷅ )
+
+This suggests we likely need a way to combine the learned components with hard physical constraint and not just through a cost function but a method of introducing and enforcing one or more hard constraints.
+
+Imagine a network that predicts temperature changes in a learned latent space, but then projects these predictions back through a physics-constrained (not physics-informed ) decoder that explicitly enforces energy balance. The latent space would capture the essential dynamics such as heat flow patterns, boundary layer effects, material responses while the decoder acts to ensure that every prediction respects fundamental thermodynamics.
+
+For additional discussions:
+[Article](https://medium.com/@jisoo_63794/from-stable-diffusion-to-rocket-science-accelerating-physics-simulations-with-ai-712a2150679f)
 
 ## 📚 References
 
