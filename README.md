@@ -306,7 +306,7 @@ max_concurrent = min(
 ## 🎯 The Road Ahead: From FEA to GenAI
 
 For my thoughts on paths to accelerating FEA with physics-constrained deep neural network:
-Article: [@jisoo_63794]([https://medium.com/@jisoo_63794](https://medium.com/@jisoo_63794/from-stable-diffusion-to-rocket-science-accelerating-physics-simulations-with-ai-712a2150679f])
+Article: [@jisoo_63794](https://medium.com/@jisoo_63794/from-stable-diffusion-to-rocket-science-accelerating-physics-simulations-with-ai-712a2150679f)
 
 ## 📚 References
 
