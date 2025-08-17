@@ -260,7 +260,7 @@ Fo = α × Δt / L² < 0.4
 python rocket_visualization.py simulation_6profiles_YYYYMMDD_HHMMSS/
 ```
 
-## 📁 Project Structure
+### 📁 Project Structure
 
 ```
 Rocket-Nose-Thermal-Analysis/
@@ -305,8 +305,8 @@ max_concurrent = min(
 
 ## 🎯 The Road Ahead: From FEA to GenAI
 
-For detailed discussion on the next steps on going from FEA to GenAI please read my medium article:
-Medium: [@jisoo_63794]([https://medium.com/@jisoo_63794](https://medium.com/@jisoo_63794/from-stable-diffusion-to-rocket-science-accelerating-physics-simulations-with-ai-712a2150679f))
+For my thoughts on paths to accelerating FEA with physics-constrained deep neural network:
+Article: [@jisoo_63794]([https://medium.com/@jisoo_63794](https://medium.com/@jisoo_63794/from-stable-diffusion-to-rocket-science-accelerating-physics-simulations-with-ai-712a2150679f])
 
 ## 📚 References
 
