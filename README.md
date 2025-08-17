@@ -291,23 +291,6 @@ The first key optimization wasn't computational — it was conceptual. Rather th
 
 While tetrahedral elements are easier to generate for complex geometries, hexahedral (brick-shaped) elements offer better performance for thin-wall structures:
 
-- **Reduced Numerical Locking**: Better handling of thermal gradients
-- **Orthogonal Heat Flow**: Natural alignment with expected heat paths
-- **Computational Efficiency**: 8 nodes vs 10 for tetrahedra = 20% fewer DOFs
-- **Memory Optimization**: Better cache locality for GPU operations
-
-## 📊 Performance Optimization Stack
-
-Combined Effect: What would take more than 5–20 hours with traditional methods on similar computer now completes in 5 minutes for a single nose profile.
-
-| Optimization | Impact | Speedup |
-|-------------|---------|---------|
-| Nose-Only Domain | 92% mesh reduction | 10x |
-| Hexahedral Elements | 20% fewer DOFs | 1.3x |
-| GPU Acceleration | Parallel compute | 4x |
-| Process Parallelism | 6 concurrent simulations | 6x |
-| Adaptive Timestepping | Dynamic dt | 1.5x |
-| **Combined Effect** | **Total** | **24x** |
 
 ### GPU Memory Management
 ```python
@@ -322,29 +305,8 @@ max_concurrent = min(
 
 ## 🎯 The Road Ahead: From FEA to GenAI
 
-### Current Dataset
-With 6 profiles × 6000 timesteps = 36,000 high-fidelity data points, we have sufficient training data for a preliminary DNN.
-
-### Next Steps (Future Work)
-1. **DNN Architecture**: Design network for spatiotemporal heat dynamics
-2. **Training Strategy**: Physics-informed neural networks (PINNs)
-3. **Validation Framework**: Compare APE against reserved FEA cases
-4. **Uncertainty Quantification**: Understand APE trust boundaries
-
-### The GenAI Vision
-What currently takes months of iterative design could be accomplished in hours through:
-- Natural language design specifications
-- Instant thermal prediction (<100ms per design)
-- Multi-objective optimization
-- Pareto-optimal solutions with confidence intervals
-
-## 🔬 Validation
-
-The simulation has been validated against:
-- NASA technical reports on hypersonic heating
-- Falcon 9 flight telemetry (publicly available data)
-- Published CFD studies on nose cone heating
-- Analytical solutions for simple geometries
+For detailed discussion on the next steps on going from FEA to GenAI please read my medium article:
+Medium: [@jisoo_63794]([https://medium.com/@jisoo_63794](https://medium.com/@jisoo_63794/from-stable-diffusion-to-rocket-science-accelerating-physics-simulations-with-ai-712a2150679f))
 
 ## 📚 References
 
