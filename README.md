@@ -287,20 +287,6 @@ The first key optimization wasn't computational — it was conceptual. Rather th
 - **Design Criticality**: Nose shape directly impacts drag, heating, and payload volume
 - **Boundary Simplification**: Natural thermal boundary at nose-body interface
 
-### Why Hexahedral Elements?
-
-While tetrahedral elements are easier to generate for complex geometries, hexahedral (brick-shaped) elements offer better performance for thin-wall structures:
-
-
-### GPU Memory Management
-```python
-# RTX 3090 with 24GB VRAM
-memory_per_sim = 3.5  # GB
-max_concurrent = min(
-    6,  # Total profiles
-    int(gpu_memory / memory_per_sim),  # GPU limit
-    optimal_cpu_cores  # CPU bottleneck
-)
 ```
 
 ## 🎯 The Road Ahead: From FEA to GenAI
