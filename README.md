@@ -276,19 +276,9 @@ Rocket-Nose-Thermal-Analysis/
     └── logs/                # Simulation logs
 ```
 
-## 🔧 Strategic Design Decisions
 
-### Why Just the Nose?
 
-The first key optimization wasn't computational — it was conceptual. Rather than simulating the entire 70-meter Falcon 9 vehicle, we focused exclusively on the nose cone region. This decision reduced our computational domain by 93% while capturing 95% of the critical thermal phenomena:
 
-- **Highest Heat Flux**: The nose experiences stagnation point heating
-- **Maximum Temperature Gradients**: Critical for material stress analysis
-- **Design Criticality**: Nose shape directly impacts drag, heating, and payload volume
-- **Boundary Simplification**: Natural thermal boundary at nose-body interface
-
-<br>
-<br>
 ## 🎯 The Road Ahead: From FEA to GenAI
 
 The key insight from SR3 and similar diffusion-based super-resolution models was about discovering that intermediate steps contain learnable patterns that can be distilled into direct mappings.
