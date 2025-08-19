@@ -287,8 +287,8 @@ The first key optimization wasn't computational — it was conceptual. Rather th
 - **Design Criticality**: Nose shape directly impacts drag, heating, and payload volume
 - **Boundary Simplification**: Natural thermal boundary at nose-body interface
 
-```
-
+<br>
+<br>
 ## 🎯 The Road Ahead: From FEA to GenAI
 
 The key insight from SR3 and similar diffusion-based super-resolution models was about discovering that intermediate steps contain learnable patterns that can be distilled into direct mappings.
