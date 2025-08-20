@@ -1,5 +1,8 @@
 # Rocket Nose Thermal Analysis
 
+Read Article:
+[Article](https://medium.com/@jisoo_63794/from-stable-diffusion-to-rocket-science-accelerating-physics-simulations-with-ai-712a2150679f)
+
 ## 🎯 Project Vision: From Stable Diffusion to Rocket Science
 
 This project explores an intriguing question: could the principles behind Stable Diffusion's image generation be applied to physics simulations? Specifically, could deep neural networks be trained to emulate physics processes in a way that permits much larger time steps than traditional finite-element analysis (FEA), while preserving accuracy?
