@@ -1,4 +1,4 @@
-# Rocket Nose Thermal Analysis
+# Accelerated Differential Physics Engine - Thermal Analysis Example
 
 Read Full Article:
 [Full Article](https://medium.com/@jisoo_63794/from-stable-diffusion-to-rocket-science-accelerating-physics-simulations-with-ai-712a2150679f)
