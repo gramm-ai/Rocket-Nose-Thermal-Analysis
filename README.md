@@ -282,7 +282,7 @@ Rocket-Nose-Thermal-Analysis/
 
 
 
-## 🎯 The Road Ahead: From FEA to GenAI
+## 🎯 Accelerating Finite Element Analysis
 
 The key insight from SR3 and similar diffusion-based super-resolution models was about discovering that intermediate steps contain learnable patterns that can be distilled into direct mappings.
 
